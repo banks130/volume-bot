@@ -1,0 +1,800 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Volume Bot — Market Maker</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #111118;
+    --surface2: #16161f;
+    --border: #1f1f2e;
+    --border2: #2a2a3e;
+    --accent: #7c3aed;
+    --accent2: #a855f7;
+    --accent-glow: rgba(124,58,237,0.22);
+    --green: #10b981;
+    --green-glow: rgba(16,185,129,0.18);
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --text: #e2e8f0;
+    --text2: #94a3b8;
+    --text3: #475569;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'Syne', sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(124,58,237,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,58,237,0.025) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none;
+    z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    top: -200px; right: -200px;
+    width: 600px; height: 600px;
+    background: radial-gradient(circle, rgba(124,58,237,0.07) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+  .app {
+    position: relative;
+    z-index: 1;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 28px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .header-left { display: flex; align-items: center; gap: 12px; }
+  .logo-icon {
+    width: 36px; height: 36px;
+    background: linear-gradient(135deg, var(--accent), var(--accent2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px;
+    box-shadow: 0 0 20px var(--accent-glow);
+  }
+  .header h1 { font-size: 18px; font-weight: 800; letter-spacing: -0.3px; }
+  .header h1 span { color: var(--accent2); }
+  .header-right { display: flex; align-items: center; gap: 14px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-family: var(--mono); font-size: 11px; color: var(--text3);
+  }
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--red); flex-shrink: 0; transition: background 0.3s;
+  }
+  .status-dot.running {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+    animation: pulse 1.5s infinite;
+  }
+  .network-badge {
+    font-family: var(--mono); font-size: 11px;
+    padding: 3px 10px; border-radius: 20px;
+    border: 1px solid var(--border2); background: var(--surface);
+    color: var(--text2); display: flex; align-items: center; gap: 6px;
+  }
+  .ndot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 5px var(--green);
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.35} }
+
+  /* Layout */
+  .main {
+    display: grid;
+    grid-template-columns: 370px 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+  @media(max-width:820px){ .main{grid-template-columns:1fr;} }
+
+  /* Panel */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .panel-header {
+    padding: 13px 17px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .panel-title {
+    font-size: 11px; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase; color: var(--text2);
+  }
+  .panel-body { padding: 16px; }
+
+  /* Form */
+  .field { margin-bottom: 14px; }
+  .field label {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; font-weight: 700;
+    color: var(--text2); letter-spacing: 0.06em; text-transform: uppercase;
+    margin-bottom: 7px;
+  }
+  .field label .hint {
+    font-weight: 400; color: var(--text3);
+    text-transform: none; letter-spacing: 0; font-family: var(--mono); font-size: 11px;
+  }
+  input[type="text"], input[type="number"], select {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    padding: 10px 13px;
+    font-family: var(--mono); font-size: 13px;
+    color: var(--text); outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    -webkit-appearance: none;
+  }
+  input:focus, select:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+  }
+  input::placeholder { color: var(--text3); }
+  select {
+    cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 12px center;
+    padding-right: 32px;
+  }
+  select option { background: #1a1a28; }
+
+  /* Range */
+  .range-row { display: flex; align-items: center; gap: 10px; }
+  input[type="range"] {
+    flex: 1; -webkit-appearance: none;
+    height: 4px; background: var(--border2); border-radius: 4px; outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--accent2); cursor: pointer;
+    box-shadow: 0 0 8px var(--accent-glow);
+  }
+  .range-value { font-family: var(--mono); font-size: 13px; color: var(--accent2); min-width: 52px; text-align: right; }
+
+  /* Cost box */
+  .cost-box {
+    background: var(--surface2); border: 1px solid var(--border2);
+    border-radius: 8px; padding: 12px 14px; margin-bottom: 14px;
+  }
+  .cost-row {
+    display: flex; justify-content: space-between;
+    font-family: var(--mono); font-size: 12px;
+    color: var(--text2); padding: 3px 0;
+  }
+  .cost-row.total {
+    border-top: 1px solid var(--border); margin-top: 6px;
+    padding-top: 8px; color: var(--text); font-weight: 600;
+  }
+  .cost-row .val { color: var(--accent2); }
+  .cost-row.total .val { color: var(--green); }
+
+  /* Toggles */
+  .divider {
+    display: flex; align-items: center; gap: 10px;
+    margin: 14px 0 10px;
+  }
+  .divider span {
+    font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--text3); white-space: nowrap;
+  }
+  .divider::before,.divider::after { content:''; flex:1; height:1px; background:var(--border); }
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 0; border-bottom: 1px solid var(--border);
+  }
+  .toggle-row:last-of-type { border-bottom: none; }
+  .toggle-label { font-size: 12px; color: var(--text); }
+  .toggle-sub { font-size: 10px; color: var(--text3); font-family: var(--mono); margin-top: 1px; }
+  .toggle { position: relative; width: 36px; height: 20px; flex-shrink: 0; }
+  .toggle input { display: none; }
+  .toggle-track {
+    position: absolute; inset: 0;
+    background: var(--border2); border-radius: 20px;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .toggle input:checked + .toggle-track { background: var(--accent); }
+  .toggle-track::after {
+    content: ''; position: absolute;
+    top: 3px; left: 3px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: white; transition: transform 0.2s;
+  }
+  .toggle input:checked + .toggle-track::after { transform: translateX(16px); }
+
+  /* Buttons */
+  .btn-row { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; padding: 11px;
+    border-radius: 9px;
+    font-family: var(--sans); font-size: 13px; font-weight: 700;
+    cursor: pointer; border: none;
+    transition: all 0.15s;
+    display: flex; align-items: center; justify-content: center; gap: 7px;
+  }
+  .btn-start {
+    background: linear-gradient(135deg, var(--green), #059669);
+    color: #fff; box-shadow: 0 0 20px var(--green-glow);
+  }
+  .btn-start:hover:not(:disabled) { box-shadow: 0 0 30px rgba(16,185,129,0.3); transform: translateY(-1px); }
+  .btn-stop {
+    background: var(--surface2); color: var(--red);
+    border: 1px solid rgba(239,68,68,0.25);
+  }
+  .btn-stop:hover:not(:disabled) { background: rgba(239,68,68,0.08); border-color: var(--red); }
+  .btn:disabled { opacity: 0.38; cursor: not-allowed; transform: none !important; box-shadow: none !important; }
+
+  /* Tabs */
+  .tabs { display: flex; border-bottom: 1px solid var(--border); }
+  .tab {
+    padding: 11px 16px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--text3); cursor: pointer;
+    border: none; border-bottom: 2px solid transparent;
+    background: none; font-family: var(--sans);
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab.active { color: var(--accent2); border-bottom-color: var(--accent2); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Stats */
+  .progress-wrap { padding: 14px 14px 0; }
+  .progress-label {
+    display: flex; justify-content: space-between;
+    font-size: 11px; font-family: var(--mono); color: var(--text3); margin-bottom: 6px;
+  }
+  .progress-bar { height: 4px; background: var(--border2); border-radius: 4px; overflow: hidden; margin-bottom: 14px; }
+  .progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 4px; width: 0%; transition: width 0.5s ease;
+  }
+  .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 0 14px 14px; }
+  .stat-card {
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 10px; padding: 13px;
+  }
+  .stat-card.wide { grid-column: span 2; }
+  .stat-label { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text3); margin-bottom: 5px; }
+  .stat-value { font-family: var(--mono); font-size: 20px; font-weight: 600; color: var(--text); line-height: 1; }
+  .stat-value.green { color: var(--green); }
+  .stat-value.purple { color: var(--accent2); }
+  .stat-sub { font-family: var(--mono); font-size: 10px; color: var(--text3); margin-top: 3px; }
+
+  /* Logs */
+  .log-container {
+    height: 360px; overflow-y: auto; padding: 12px;
+    scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+  }
+  .log-container::-webkit-scrollbar { width: 4px; }
+  .log-container::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 4px; }
+  .log-entry {
+    font-family: var(--mono); font-size: 12px; line-height: 1.7;
+    padding: 2px 0; display: flex; gap: 10px;
+    border-bottom: 1px solid rgba(31,31,46,0.5);
+    color: var(--text2);
+  }
+  .log-time { color: var(--text3); flex-shrink: 0; }
+  .log-entry.success .log-msg { color: var(--green); }
+  .log-entry.error .log-msg { color: var(--red); }
+  .log-entry.info .log-msg { color: var(--accent2); }
+  .log-entry.warn .log-msg { color: var(--yellow); }
+
+  /* Tx feed */
+  .tx-feed {
+    height: 360px; overflow-y: auto; padding: 12px;
+    scrollbar-width: thin; scrollbar-color: var(--border2) transparent;
+  }
+  .tx-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 7px 0; border-bottom: 1px solid rgba(31,31,46,0.5);
+    font-family: var(--mono); font-size: 12px;
+    animation: fadeIn 0.3s ease;
+  }
+  @keyframes fadeIn { from{opacity:0;transform:translateX(-6px)} to{opacity:1;transform:none} }
+  .tx-badge {
+    padding: 2px 8px; border-radius: 4px;
+    font-size: 10px; font-weight: 600; flex-shrink: 0;
+  }
+  .tx-badge.buy { background:rgba(16,185,129,0.14); color:var(--green); border:1px solid rgba(16,185,129,0.3); }
+  .tx-badge.sell { background:rgba(239,68,68,0.1); color:var(--red); border:1px solid rgba(239,68,68,0.25); }
+  .tx-sig { color: var(--accent2); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+  .tx-sig:hover { text-decoration: underline; }
+  .tx-amt { color: var(--text2); }
+  .tx-time { color: var(--text3); font-size: 11px; }
+
+  .ws-indicator { font-family: var(--mono); font-size: 11px; }
+  .dot-spin { display: inline-flex; gap: 3px; }
+  .dot-spin span {
+    width: 4px; height: 4px; border-radius: 50%;
+    background: var(--text3); animation: dotBounce 1.2s infinite;
+  }
+  .dot-spin span:nth-child(2) { animation-delay: 0.2s; }
+  .dot-spin span:nth-child(3) { animation-delay: 0.4s; }
+  @keyframes dotBounce { 0%,80%,100%{transform:translateY(0);opacity:0.4} 40%{transform:translateY(-4px);opacity:1} }
+
+  .empty-state { font-family: var(--mono); font-size: 12px; color: var(--text3); text-align: center; padding: 30px 0; }
+
+  .right-col { display: flex; flex-direction: column; gap: 16px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-icon">⚡</div>
+      <div>
+        <h1>Volume<span>Bot</span></h1>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-pill">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-text">Stopped</span>
+      </div>
+      <div class="network-badge">
+        <div class="ndot"></div>
+        <span id="network-label">...</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- LEFT CONFIG -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-title">Configuration</span>
+          <span class="ws-indicator" id="ws-status">
+            <span class="dot-spin"><span></span><span></span><span></span></span>
+          </span>
+        </div>
+        <div class="panel-body">
+
+          <div class="field">
+            <label>Token Address</label>
+            <input type="text" id="token-address" placeholder="Paste token CA..." />
+          </div>
+
+          <div class="field">
+            <label>
+              Number of Makers
+              <span class="hint" id="makers-hint">100</span>
+            </label>
+            <div class="range-row">
+              <input type="range" id="makers-range" min="10" max="2000" step="10" value="100">
+              <span class="range-value" id="makers-val">100</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>
+              Volume Target (USD)
+              <span class="hint" id="vol-hint">$10k</span>
+            </label>
+            <div class="range-row">
+              <input type="range" id="vol-range" min="1000" max="500000" step="1000" value="10000">
+              <span class="range-value" id="vol-val">$10k</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>
+              SOL Per Trade
+              <span class="hint">≈0.001 SOL fees each</span>
+            </label>
+            <input type="number" id="sol-per-trade" value="0.08" min="0.01" step="0.01" />
+          </div>
+
+          <div class="field">
+            <label>Package</label>
+            <select id="package-select">
+              <option value="micro">Micro — 20 makers / ~2 SOL</option>
+              <option value="pump" selected>Pump — 50 makers / ~4 SOL</option>
+              <option value="trending">Trending — 100 makers / ~10 SOL</option>
+              <option value="moon">Moon — 200 makers / ~24 SOL</option>
+            </select>
+          </div>
+
+          <div class="divider"><span>Advanced</span></div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Random delay between trades</div>
+              <div class="toggle-sub">0.8s – 4.2s organic variance</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="random-delay" checked>
+              <div class="toggle-track"></div>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Auto-rebalance wallets</div>
+              <div class="toggle-sub">redistribute SOL between phases</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="auto-rebalance">
+              <div class="toggle-track"></div>
+            </label>
+          </div>
+
+          <div class="toggle-row">
+            <div>
+              <div class="toggle-label">Target price mode</div>
+              <div class="toggle-sub">pump until specific price hit</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="target-price">
+              <div class="toggle-track"></div>
+            </label>
+          </div>
+
+          <div style="margin-top:16px;">
+            <div class="cost-box">
+              <div class="cost-row"><span>Maker fee (0.025 SOL/100)</span><span class="val" id="fee-makers">0.025 SOL</span></div>
+              <div class="cost-row"><span>Est. gas fees</span><span class="val" id="fee-gas">0.100 SOL</span></div>
+              <div class="cost-row"><span>Volume SOL</span><span class="val" id="fee-exec">0.080 SOL</span></div>
+              <div class="cost-row total"><span>Total estimated</span><span class="val" id="fee-total">0.205 SOL</span></div>
+            </div>
+
+            <div class="btn-row">
+              <button class="btn btn-start" id="start-btn">▶ Start Bot</button>
+              <button class="btn btn-stop" id="stop-btn" disabled>⏹ Stop</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT STATS + LOGS -->
+    <div class="right-col">
+
+      <!-- Stats panel -->
+      <div class="panel">
+        <div class="progress-wrap">
+          <div class="progress-label">
+            <span>Makers Progress</span>
+            <span id="progress-label">0 / 100</span>
+          </div>
+          <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="stat-label">Wall Volume</div>
+            <div class="stat-value green" id="wall-volume">0.000</div>
+            <div class="stat-sub">SOL — last phase</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Phase Volume</div>
+            <div class="stat-value purple" id="phase-volume">0.000</div>
+            <div class="stat-sub">SOL — current run</div>
+          </div>
+          <div class="stat-card wide">
+            <div class="stat-label">Total Volume Generated</div>
+            <div class="stat-value" id="total-volume">0.000</div>
+            <div class="stat-sub">SOL — all phases</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Makers Sent</div>
+            <div class="stat-value" id="makers-sent">0</div>
+            <div class="stat-sub">transactions</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">SOL Spent</div>
+            <div class="stat-value" id="sol-spent">0.000</div>
+            <div class="stat-sub">this session</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Logs + Txs panel -->
+      <div class="panel">
+        <div class="tabs">
+          <button class="tab active" data-tab="logs">📜 Logs</button>
+          <button class="tab" data-tab="txs">🔗 Transactions</button>
+        </div>
+
+        <div class="tab-panel active" id="tab-logs">
+          <div class="log-container" id="log-container">
+            <div class="log-entry info">
+              <span class="log-time">--:--:--</span>
+              <span class="log-msg">Dashboard ready — waiting for backend connection...</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-txs">
+          <div class="tx-feed" id="tx-feed">
+            <div class="empty-state">No transactions yet</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  // Connect to the same host/port that served this page (works behind proxy)
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const WS_URL  = `${wsProto}//${location.host}`;
+  const API_BASE = `/api`;
+
+  // DOM
+  const startBtn      = document.getElementById('start-btn');
+  const stopBtn       = document.getElementById('stop-btn');
+  const statusDot     = document.getElementById('status-dot');
+  const statusText    = document.getElementById('status-text');
+  const wsStatus      = document.getElementById('ws-status');
+  const networkLabel  = document.getElementById('network-label');
+  const logContainer  = document.getElementById('log-container');
+  const txFeed        = document.getElementById('tx-feed');
+  const progressFill  = document.getElementById('progress-fill');
+  const progressLabel = document.getElementById('progress-label');
+  const makersRange   = document.getElementById('makers-range');
+  const makersVal     = document.getElementById('makers-val');
+  const volRange      = document.getElementById('vol-range');
+  const volVal        = document.getElementById('vol-val');
+
+  let ws = null;
+  let firstTx = true;
+
+  // --- Sliders ---
+  function fmtVol(v) { return v >= 1000 ? `$${(v/1000).toFixed(0)}k` : `$${v}`; }
+
+  makersRange.addEventListener('input', () => {
+    makersVal.textContent = makersRange.value;
+    updateCost();
+  });
+  volRange.addEventListener('input', () => {
+    volVal.textContent = fmtVol(parseInt(volRange.value));
+    updateCost();
+  });
+  document.getElementById('sol-per-trade').addEventListener('input', updateCost);
+
+  function updateCost() {
+    const makers   = parseInt(makersRange.value);
+    const perTrade = parseFloat(document.getElementById('sol-per-trade').value) || 0.08;
+    const smithii  = (makers / 100) * 0.025;
+    const gas      = makers * 0.001;
+    const exec     = perTrade;
+    const total    = smithii + gas + exec;
+    document.getElementById('fee-makers').textContent = smithii.toFixed(3) + ' SOL';
+    document.getElementById('fee-gas').textContent    = gas.toFixed(3) + ' SOL';
+    document.getElementById('fee-exec').textContent   = exec.toFixed(3) + ' SOL';
+    document.getElementById('fee-total').textContent  = total.toFixed(3) + ' SOL';
+  }
+  updateCost();
+
+  // --- Tabs ---
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById('tab-' + tab.dataset.tab).classList.add('active');
+    });
+  });
+
+  // --- Log ---
+  function addLog(msg, level = '') {
+    // Remove placeholder
+    const ph = logContainer.querySelector('.log-entry.info[data-ph]');
+    if (ph) ph.remove();
+
+    const el = document.createElement('div');
+    el.className = `log-entry ${level}`;
+    const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+    el.innerHTML = `<span class="log-time">${t}</span><span class="log-msg">${escHtml(msg)}</span>`;
+    logContainer.appendChild(el);
+    logContainer.scrollTop = logContainer.scrollHeight;
+  }
+
+  function escHtml(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  // --- Tx feed ---
+  function addTx(type, sig, amount) {
+    if (firstTx) { txFeed.innerHTML = ''; firstTx = false; }
+    const el = document.createElement('div');
+    el.className = 'tx-item';
+    const t = new Date().toLocaleTimeString('en-US', { hour12: false });
+    const short = sig ? sig.slice(0,14) + '...' : 'pending';
+    const href = `https://solscan.io/tx/${sig}`;
+    el.innerHTML = `
+      <span class="tx-badge ${type}">${type.toUpperCase()}</span>
+      <a class="tx-sig" href="${href}" target="_blank" title="${sig}">${short}</a>
+      <span class="tx-amt">${escHtml(amount||'')}</span>
+      <span class="tx-time">${t}</span>
+    `;
+    txFeed.prepend(el);
+    // cap at 200
+    while (txFeed.children.length > 200) txFeed.removeChild(txFeed.lastChild);
+  }
+
+  // --- Running state ---
+  function setRunning(running) {
+    startBtn.disabled = running;
+    stopBtn.disabled  = !running;
+    statusDot.className = 'status-dot' + (running ? ' running' : '');
+    statusText.textContent = running ? 'Running' : 'Stopped';
+    if (!running) {
+      progressFill.style.width = '0%';
+    }
+  }
+
+  // --- Stats ---
+  function updateStats(d) {
+    const fmt = v => (parseFloat(v)||0).toFixed(3);
+    document.getElementById('wall-volume').textContent  = fmt(d.wallVolume);
+    document.getElementById('phase-volume').textContent = fmt(d.phaseVolume);
+    document.getElementById('total-volume').textContent = fmt(d.totalVolume);
+    document.getElementById('sol-spent').textContent    = fmt(d.solSpent);
+  }
+
+  function updateProgress(sent, total) {
+    const pct = total > 0 ? Math.min((sent / total) * 100, 100) : 0;
+    progressFill.style.width = pct + '%';
+    progressLabel.textContent = `${sent} / ${total}`;
+    document.getElementById('makers-sent').textContent = sent;
+  }
+
+  // --- WebSocket ---
+  function connectWS() {
+    wsStatus.innerHTML = `<span class="dot-spin"><span></span><span></span><span></span></span>`;
+
+    try {
+      ws = new WebSocket(WS_URL);
+    } catch(e) {
+      wsStatus.innerHTML = `<span style="color:var(--red)">● error</span>`;
+      setTimeout(connectWS, 4000);
+      return;
+    }
+
+    ws.onopen = () => {
+      wsStatus.innerHTML = `<span style="color:var(--green)">● live</span>`;
+      addLog('Connected to server', 'success');
+    };
+
+    ws.onmessage = (evt) => {
+      let d;
+      try { d = JSON.parse(evt.data); } catch{ return; }
+
+      switch(d.type) {
+        case 'log':
+          addLog(d.message, d.level || '');
+          break;
+        case 'volume':
+          updateStats(d.data || {});
+          break;
+        case 'status':
+          setRunning(d.running);
+          break;
+        case 'tx':
+          addTx(d.txType, d.sig, d.amount);
+          break;
+        case 'progress':
+          updateProgress(d.sent, d.total);
+          break;
+        case 'network':
+          networkLabel.textContent = (d.network||'').toUpperCase();
+          break;
+      }
+    };
+
+    ws.onerror = () => {
+      wsStatus.innerHTML = `<span style="color:var(--red)">● error</span>`;
+    };
+
+    ws.onclose = () => {
+      wsStatus.innerHTML = `<span style="color:var(--text3)">● offline</span>`;
+      addLog('Server disconnected — retrying in 3s...', 'warn');
+      setTimeout(connectWS, 3000);
+    };
+  }
+
+  // --- API ---
+  async function startBot() {
+    const tokenAddress = document.getElementById('token-address').value.trim();
+    if (!tokenAddress) {
+      addLog('Token address is required', 'error');
+      return;
+    }
+
+    const config = {
+      package:      document.getElementById('package-select').value,
+      makers:       parseInt(makersRange.value),
+      solPerTrade:  parseFloat(document.getElementById('sol-per-trade').value),
+      tokenAddress,
+      randomDelay:  document.getElementById('random-delay').checked,
+      autoRebalance:document.getElementById('auto-rebalance').checked,
+      targetPrice:  document.getElementById('target-price').checked
+    };
+
+    addLog(`Starting bot · ${config.makers} makers · ${config.solPerTrade} SOL/trade · ${tokenAddress.slice(0,8)}...`, 'info');
+
+    try {
+      const res = await fetch(`${API_BASE}/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(config)
+      });
+      const json = await res.json();
+      if (json.success) addLog('Start accepted ✓', 'success');
+      else addLog(`Start rejected: ${json.message}`, 'error');
+    } catch(e) {
+      addLog(`Cannot reach backend: ${e.message}`, 'error');
+    }
+  }
+
+  async function stopBot() {
+    addLog('Sending stop signal...', 'warn');
+    try {
+      const res = await fetch(`${API_BASE}/stop`, { method: 'POST' });
+      const json = await res.json();
+      if (json.success) addLog('Stop signal sent ✓', 'success');
+      else addLog(`Stop failed: ${json.message}`, 'error');
+    } catch(e) {
+      addLog(`Cannot reach backend: ${e.message}`, 'error');
+    }
+  }
+
+  async function fetchStatus() {
+    try {
+      const res = await fetch(`${API_BASE}/status`);
+      const d = await res.json();
+      setRunning(d.running);
+      networkLabel.textContent = (d.network || '').toUpperCase();
+      if (d.stats) updateStats(d.stats);
+    } catch(e) { /* server not up yet */ }
+  }
+
+  // --- Init ---
+  startBtn.addEventListener('click', startBot);
+  stopBtn.addEventListener('click', stopBot);
+  setRunning(false);
+  connectWS();
+  fetchStatus();
+</script>
+</body>
+</html>
